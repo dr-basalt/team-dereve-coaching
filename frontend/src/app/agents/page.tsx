@@ -37,6 +37,7 @@ export default function AgentsPage() {
   const [newAgentName, setNewAgentName] = useState('')
   const [newAgentDesc, setNewAgentDesc] = useState('')
   const [newAgentColor, setNewAgentColor] = useState('#888888')
+  const [listOpen, setListOpen] = useState(true)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -139,8 +140,17 @@ export default function AgentsPage() {
       </div>
 
       <div className="agents-layout">
+        {/* Toggle list */}
+        <button
+          className="agents-list-toggle"
+          style={{ left: listOpen ? '316px' : '16px' }}
+          onClick={() => setListOpen(!listOpen)}
+        >
+          {listOpen ? '\u2190' : '\u2192'}
+        </button>
+
         {/* Agent list */}
-        <div className="agents-list">
+        <div className={`agents-list ${listOpen ? '' : 'collapsed'}`}>
           {agents.map(a => (
             <div
               key={a.id}
