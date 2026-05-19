@@ -2,8 +2,10 @@
 
 import { useChat } from 'ai/react'
 import { useEffect, useRef } from 'react'
+import { useSession, signOut } from 'next-auth/react'
 
 export default function Home() {
+  const { data: session } = useSession()
   const { messages, input, handleInputChange, handleSubmit, isLoading } = useChat({
     api: '/api/chat',
   })
@@ -17,6 +19,19 @@ export default function Home() {
   return (
     <div className="app">
       <div className="header">
+        <div className="header-top">
+          {session?.user && (
+            <div className="user-info">
+              {session.user.image && (
+                <img src={session.user.image} alt="" className="user-avatar" />
+              )}
+              <span className="user-name">{session.user.name}</span>
+            </div>
+          )}
+          <button onClick={() => signOut()} className="signout-btn">
+            Deconnexion
+          </button>
+        </div>
         <h1>Team Dereve - Coaching IA</h1>
         <p>Plateforme de coaching avec intelligence artificielle</p>
         <div className="coaches">
@@ -47,7 +62,7 @@ export default function Home() {
             className="input-field"
             value={input}
             onChange={handleInputChange}
-            placeholder="Dis-moi ce qui t'amène..."
+            placeholder="Dis-moi ce qui t'amene..."
             disabled={isLoading}
           />
           <button type="submit" className="send-btn" disabled={isLoading || !input.trim()}>

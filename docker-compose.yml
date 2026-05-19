@@ -36,6 +36,10 @@ services:
     environment:
       - HERMES_API_URL=http://hermes:8080
       - NEXT_PUBLIC_HERMES_API_URL=https://team-dereve.coachlibre.com/hermes
+      - AUTH_SECRET=${AUTH_SECRET}
+      - AUTH_GITHUB_ID=${AUTH_GITHUB_ID}
+      - AUTH_GITHUB_SECRET=${AUTH_GITHUB_SECRET}
+      - AUTH_TRUST_HOST=true
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.frontend.rule=Host(`team-dereve.coachlibre.com`)"
