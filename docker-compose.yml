@@ -54,8 +54,9 @@ services:
   openwebui:
     image: ghcr.io/open-webui/open-webui:main
     restart: unless-stopped
+    ports:
+      - "8081:8080"
     depends_on:
-      - traefik
       - hermes
     environment:
       - OPENAI_API_BASE_URLS=http://hermes:8080/v1;https://openrouter.ai/api/v1
@@ -70,11 +71,6 @@ services:
       - AUDIO_TTS_OPENAI_API_KEY=${OPENROUTER_API_KEY}
     volumes:
       - owui-data:/app/backend/data
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.owui.rule=Host(`owui-dereve.coachlibre.com`)"
-      - "traefik.http.routers.owui.entrypoints=web"
-      - "traefik.http.services.owui.loadbalancer.server.port=8080"
     networks:
       - web
 
