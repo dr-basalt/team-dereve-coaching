@@ -3,6 +3,7 @@
 import { useChat } from 'ai/react'
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useSession, signOut } from 'next-auth/react'
+import Link from 'next/link'
 
 type Conversation = {
   id: string
@@ -180,6 +181,8 @@ export default function Home() {
         <button onClick={newConversation} className="new-convo-btn">
           + Nouvelle conversation
         </button>
+
+        <Link href="/agents" className="agents-link">Gerer les agents</Link>
 
         <div className="sidebar-tabs">
           <button

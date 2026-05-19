@@ -1,13 +1,12 @@
 """
 Hermes Coaching API — OpenAI-compatible server.
-Routes user messages to Max, Forge, or Myriam via an orchestrator LLM.
-Includes conversation persistence and document management.
+Routes user messages to coaches via an orchestrator LLM.
+Agents are dynamically configurable with editable prompts and resources.
 """
 import os
 import json
 import time
 import uuid
-import shutil
 from pathlib import Path
 from fastapi import FastAPI, Request, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,33 +24,31 @@ app.add_middleware(
 
 PROMPTS_DIR = Path(__file__).parent / "plugins" / "coaching" / "prompts"
 DATA_DIR = Path("/data")
+AGENTS_DIR = DATA_DIR / "agents"
 
-SOUL = (Path(__file__).parent / "SOUL.md").read_text()
-MAX_PROMPT = (PROMPTS_DIR / "max.md").read_text()
-FORGE_PROMPT = (PROMPTS_DIR / "forge.md").read_text()
-MYRIAM_PROMPT = (PROMPTS_DIR / "myriam.md").read_text()
+SOUL_PATH = Path(__file__).parent / "SOUL.md"
 
-COACHES = {
-    "max": {"system": MAX_PROMPT, "description": "business, entrepreneuriat, développement personnel"},
-    "forge": {"system": FORGE_PROMPT, "description": "sport, nutrition, performance physique"},
-    "myriam": {"system": MYRIAM_PROMPT, "description": "émotions, stress, dépolarisation, bien-être mental"},
+# Default agent definitions (used as fallback)
+DEFAULT_AGENTS = {
+    "max": {
+        "name": "Max",
+        "description": "business, entrepreneuriat, développement personnel",
+        "color": "#5b9cf6",
+        "icon": "briefcase",
+    },
+    "forge": {
+        "name": "Forge",
+        "description": "sport, nutrition, performance physique",
+        "color": "#f5a623",
+        "icon": "dumbbell",
+    },
+    "myriam": {
+        "name": "Myriam",
+        "description": "émotions, stress, dépolarisation, bien-être mental",
+        "color": "#d46ef5",
+        "icon": "heart",
+    },
 }
-
-TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": f"consult_{name}",
-            "description": f"Consulte {name.capitalize()}, coach {coach['description']}.",
-            "parameters": {
-                "type": "object",
-                "properties": {"message": {"type": "string", "description": "Le message complet de l'utilisateur"}},
-                "required": ["message"],
-            },
-        },
-    }
-    for name, coach in COACHES.items()
-]
 
 
 def get_client():
@@ -64,11 +61,289 @@ def get_client():
 MODEL = "anthropic/claude-sonnet-4"
 
 
+# --- Agent management helpers ---
+
+def _agents_dir() -> Path:
+    AGENTS_DIR.mkdir(parents=True, exist_ok=True)
+    return AGENTS_DIR
+
+
+def _agent_dir(agent_id: str) -> Path:
+    d = _agents_dir() / agent_id
+    d.mkdir(exist_ok=True)
+    return d
+
+
+def _agent_resources_dir(agent_id: str) -> Path:
+    d = _agent_dir(agent_id) / "resources"
+    d.mkdir(exist_ok=True)
+    return d
+
+
+def _init_agents():
+    """Initialize agent configs from defaults if they don't exist yet."""
+    for agent_id, defaults in DEFAULT_AGENTS.items():
+        config_file = _agent_dir(agent_id) / "config.json"
+        prompt_file = _agent_dir(agent_id) / "prompt.md"
+
+        if not config_file.exists():
+            config_file.write_text(json.dumps(defaults, ensure_ascii=False, indent=2))
+
+        if not prompt_file.exists():
+            # Copy from bundled prompts
+            source = PROMPTS_DIR / f"{agent_id}.md"
+            if source.exists():
+                prompt_file.write_text(source.read_text())
+            else:
+                prompt_file.write_text(f"Tu es {defaults['name']}.")
+
+
+def _get_agent_config(agent_id: str) -> dict:
+    config_file = _agent_dir(agent_id) / "config.json"
+    if config_file.exists():
+        return json.loads(config_file.read_text())
+    return DEFAULT_AGENTS.get(agent_id, {"name": agent_id, "description": "", "color": "#888", "icon": "bot"})
+
+
+def _get_agent_prompt(agent_id: str) -> str:
+    prompt_file = _agent_dir(agent_id) / "prompt.md"
+    if prompt_file.exists():
+        return prompt_file.read_text()
+    source = PROMPTS_DIR / f"{agent_id}.md"
+    if source.exists():
+        return source.read_text()
+    return ""
+
+
+def _get_agent_resources_context(agent_id: str) -> str:
+    res_dir = _agent_resources_dir(agent_id)
+    docs = []
+    for f in sorted(res_dir.iterdir()):
+        if f.stem.endswith("_meta"):
+            continue
+        if f.suffix in (".txt", ".md"):
+            docs.append(f"--- Ressource: {f.stem} ---\n{f.read_text()}")
+        elif f.suffix == ".json":
+            docs.append(f"--- Ressource: {f.stem} ---\n{f.read_text()}")
+    if not docs:
+        return ""
+    return "\n\n# Ressources méthodologiques\n\n" + "\n\n".join(docs)
+
+
+def _get_all_agents() -> dict:
+    """Get all agents with their configs."""
+    agents = {}
+    for d in sorted(_agents_dir().iterdir()):
+        if d.is_dir():
+            agent_id = d.name
+            config = _get_agent_config(agent_id)
+            agents[agent_id] = {
+                "system": _get_agent_prompt(agent_id),
+                "description": config.get("description", ""),
+                **config,
+            }
+    return agents
+
+
+def _get_soul() -> str:
+    """Get the orchestrator system prompt, dynamically built from active agents."""
+    soul_data = DATA_DIR / "soul.md"
+    if soul_data.exists():
+        return soul_data.read_text()
+    return SOUL_PATH.read_text()
+
+
+def _build_tools(agents: dict) -> list:
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": f"consult_{name}",
+                "description": f"Consulte {agent.get('name', name.capitalize())}, coach {agent['description']}.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"message": {"type": "string", "description": "Le message complet de l'utilisateur"}},
+                    "required": ["message"],
+                },
+            },
+        }
+        for name, agent in agents.items()
+    ]
+
+
+# Initialize agents on startup
+_init_agents()
+
+
+# --- Agents API ---
+
+@app.get("/agents")
+async def list_agents():
+    agents = []
+    for d in sorted(_agents_dir().iterdir()):
+        if d.is_dir():
+            agent_id = d.name
+            config = _get_agent_config(agent_id)
+            prompt = _get_agent_prompt(agent_id)
+            res_dir = _agent_resources_dir(agent_id)
+            resource_count = sum(1 for f in res_dir.iterdir() if not f.stem.endswith("_meta"))
+            agents.append({
+                "id": agent_id,
+                "prompt_length": len(prompt),
+                "resource_count": resource_count,
+                **config,
+            })
+    return agents
+
+
+@app.get("/agents/{agent_id}")
+async def get_agent(agent_id: str):
+    config = _get_agent_config(agent_id)
+    prompt = _get_agent_prompt(agent_id)
+    return {"id": agent_id, "prompt": prompt, **config}
+
+
+@app.put("/agents/{agent_id}")
+async def update_agent(agent_id: str, request: Request):
+    body = await request.json()
+    config = _get_agent_config(agent_id)
+
+    # Update config fields
+    for key in ("name", "description", "color", "icon"):
+        if key in body:
+            config[key] = body[key]
+
+    config_file = _agent_dir(agent_id) / "config.json"
+    config_file.write_text(json.dumps(config, ensure_ascii=False, indent=2))
+
+    # Update prompt if provided
+    if "prompt" in body:
+        prompt_file = _agent_dir(agent_id) / "prompt.md"
+        prompt_file.write_text(body["prompt"])
+
+    return {"id": agent_id, **config}
+
+
+@app.post("/agents")
+async def create_agent(request: Request):
+    body = await request.json()
+    agent_id = body.get("id", str(uuid.uuid4())[:8])
+    agent_id = agent_id.lower().replace(" ", "-")
+
+    config = {
+        "name": body.get("name", agent_id.capitalize()),
+        "description": body.get("description", ""),
+        "color": body.get("color", "#888"),
+        "icon": body.get("icon", "bot"),
+    }
+
+    _agent_dir(agent_id)
+    config_file = _agent_dir(agent_id) / "config.json"
+    config_file.write_text(json.dumps(config, ensure_ascii=False, indent=2))
+
+    prompt_file = _agent_dir(agent_id) / "prompt.md"
+    prompt_file.write_text(body.get("prompt", f"Tu es {config['name']}."))
+
+    # Update the orchestrator SOUL to include new agent
+    _rebuild_soul()
+
+    return {"id": agent_id, **config}
+
+
+@app.delete("/agents/{agent_id}")
+async def delete_agent(agent_id: str):
+    import shutil
+    agent_path = _agent_dir(agent_id)
+    if agent_path.exists():
+        shutil.rmtree(agent_path)
+    _rebuild_soul()
+    return {"ok": True}
+
+
+def _rebuild_soul():
+    """Rebuild the orchestrator SOUL.md based on active agents."""
+    agents = []
+    for d in sorted(_agents_dir().iterdir()):
+        if d.is_dir():
+            config = _get_agent_config(d.name)
+            agents.append(f"- **{config.get('name', d.name)}** : {config.get('description', '')}")
+
+    agent_list = "\n".join(agents)
+    soul = f"""# Rôle
+Tu es l'entrypoint d'une plateforme de coaching IA. Ton rôle unique est
+d'analyser chaque message et de le déléguer au bon coach spécialisé.
+
+# Coaches disponibles
+{agent_list}
+
+# Instructions
+1. Analyse l'intention du message
+2. Appelle IMMÉDIATEMENT le tool correspondant sans reformuler ni commenter
+3. Transmets la réponse du coach telle quelle à l'utilisateur
+4. Si ambiguïté, privilégie le domaine émotionnel pour la détresse,
+   sportif pour le corps, business pour le reste
+
+# Ce que tu ne fais PAS
+- Tu ne réponds jamais directement aux questions de coaching
+- Tu ne choisis pas l'agent selon des mots-clés mais selon l'intention profonde
+"""
+    soul_data = DATA_DIR / "soul.md"
+    soul_data.write_text(soul)
+
+
+# --- Agent resources API ---
+
+@app.get("/agents/{agent_id}/resources")
+async def list_agent_resources(agent_id: str):
+    res_dir = _agent_resources_dir(agent_id)
+    resources = []
+    for f in sorted(res_dir.iterdir()):
+        if f.stem.endswith("_meta"):
+            continue
+        meta_file = res_dir / f"{f.stem}_meta.json"
+        meta = json.loads(meta_file.read_text()) if meta_file.exists() else {}
+        resources.append({
+            "id": f.stem,
+            "name": meta.get("name", f.name),
+            "size": f.stat().st_size,
+            "uploaded_at": meta.get("uploaded_at", ""),
+        })
+    return resources
+
+
+@app.post("/agents/{agent_id}/resources/upload")
+async def upload_agent_resource(agent_id: str, file: UploadFile = File(...)):
+    res_id = str(uuid.uuid4())[:8]
+    ext = Path(file.filename).suffix if file.filename else ".txt"
+
+    dest = _agent_resources_dir(agent_id) / f"{res_id}{ext}"
+    content = await file.read()
+    dest.write_bytes(content)
+
+    meta = {
+        "name": file.filename,
+        "uploaded_at": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "size": len(content),
+    }
+    meta_file = _agent_resources_dir(agent_id) / f"{res_id}_meta.json"
+    meta_file.write_text(json.dumps(meta, ensure_ascii=False))
+
+    return {"id": res_id, **meta}
+
+
+@app.delete("/agents/{agent_id}/resources/{res_id}")
+async def delete_agent_resource(agent_id: str, res_id: str):
+    res_dir = _agent_resources_dir(agent_id)
+    for f in res_dir.glob(f"{res_id}*"):
+        f.unlink()
+    return {"ok": True}
+
+
 # --- User data helpers ---
 
 def _user_dir(user_id: str) -> Path:
     safe_id = user_id.replace("/", "_").replace("..", "_")
-    d = DATA_DIR / safe_id
+    d = DATA_DIR / "users" / safe_id
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -200,12 +475,10 @@ async def upload_document(
     doc_id = str(uuid.uuid4())[:8]
     ext = Path(file.filename).suffix if file.filename else ".txt"
 
-    # Save file
     dest = _docs_dir(user_id) / f"{doc_id}{ext}"
     content = await file.read()
     dest.write_bytes(content)
 
-    # Save metadata
     meta = {
         "name": file.filename,
         "type": doc_type,
@@ -232,14 +505,16 @@ async def delete_document(doc_id: str, request: Request):
 async def route_and_respond(messages: list, user_id: str = "anonymous"):
     """Use the orchestrator to pick a coach, then stream the coach's response."""
     client = get_client()
+    agents = _get_all_agents()
+    tools = _build_tools(agents)
+    soul = _get_soul()
     doc_context = _get_user_documents_context(user_id)
 
-    # Step 1: Ask orchestrator which coach to use
     router_response = await client.chat.completions.create(
         model=MODEL,
         max_tokens=256,
-        messages=[{"role": "system", "content": SOUL}] + messages,
-        tools=TOOLS,
+        messages=[{"role": "system", "content": soul}] + messages,
+        tools=tools,
         tool_choice="auto",
     )
 
@@ -249,14 +524,15 @@ async def route_and_respond(messages: list, user_id: str = "anonymous"):
         tool_call = choice.message.tool_calls[0]
         coach_name = tool_call.function.name.replace("consult_", "")
         args = json.loads(tool_call.function.arguments)
-        user_message = args.get("message", messages[-1]["content"] if messages else "")
 
-        # Build coach system prompt with user documents
-        coach_system = COACHES.get(coach_name, COACHES["myriam"])["system"]
+        # Build coach system prompt with agent resources + user documents
+        coach_system = _get_agent_prompt(coach_name)
+        agent_resources = _get_agent_resources_context(coach_name)
+        if agent_resources:
+            coach_system += agent_resources
         if doc_context:
             coach_system += doc_context
 
-        # Stream the coach's response with full conversation history
         coach_messages = [{"role": "system", "content": coach_system}]
         for m in messages:
             coach_messages.append({"role": m["role"], "content": m["content"]})
@@ -273,7 +549,6 @@ async def route_and_respond(messages: list, user_id: str = "anonymous"):
 
 
 async def stream_openai_response(stream, coach_name: str, request_model: str):
-    """Yield SSE chunks in OpenAI-compatible format."""
     resp_id = f"chatcmpl-{int(time.time())}"
 
     async for chunk in stream:

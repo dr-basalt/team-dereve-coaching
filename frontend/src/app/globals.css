@@ -425,6 +425,397 @@ body {
   background: #e0e0e0;
 }
 
+/* === Agents admin page === */
+.agents-page {
+  min-height: 100vh;
+  padding: 1.5rem;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.agents-header {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.agents-header h1 {
+  font-size: 1.25rem;
+  color: #fff;
+}
+
+.back-link {
+  color: #5b9cf6;
+  text-decoration: none;
+  font-size: 0.85rem;
+}
+
+.back-link:hover {
+  text-decoration: underline;
+}
+
+.agents-layout {
+  display: flex;
+  gap: 1.5rem;
+  min-height: calc(100vh - 100px);
+}
+
+.agents-list {
+  width: 300px;
+  min-width: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.agent-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: #111;
+  border: 1px solid #1a1a1a;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.agent-card:hover {
+  border-color: #333;
+}
+
+.agent-card.selected {
+  border-color: #5b9cf6;
+  background: #0d1b2a;
+}
+
+.agent-card-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.agent-card-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.agent-card-name {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #e0e0e0;
+}
+
+.agent-card-desc {
+  font-size: 0.75rem;
+  color: #888;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-card-meta {
+  font-size: 0.7rem;
+  color: #555;
+}
+
+.agent-card-delete {
+  background: none;
+  border: none;
+  color: #555;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+  font-size: 0.8rem;
+}
+
+.agent-card:hover .agent-card-delete {
+  opacity: 1;
+}
+
+.agent-card-delete:hover {
+  color: #f66;
+}
+
+.add-agent-btn {
+  padding: 0.75rem;
+  border: 1px dashed #333;
+  border-radius: 10px;
+  background: none;
+  color: #888;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.add-agent-btn:hover {
+  border-color: #5b9cf6;
+  color: #5b9cf6;
+}
+
+.new-agent-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1rem;
+  background: #111;
+  border: 1px solid #2a2a2a;
+  border-radius: 10px;
+}
+
+.agent-input {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
+  background: #0a0a0a;
+  color: #e0e0e0;
+  font-size: 0.85rem;
+  outline: none;
+}
+
+.agent-input:focus {
+  border-color: #5b9cf6;
+}
+
+.new-agent-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.color-picker {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  background: none;
+}
+
+.color-picker-large {
+  width: 48px;
+  height: 32px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  background: none;
+}
+
+.btn-create {
+  padding: 0.4rem 0.8rem;
+  border-radius: 8px;
+  border: none;
+  background: #5b9cf6;
+  color: #fff;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.btn-cancel {
+  padding: 0.4rem 0.8rem;
+  border-radius: 8px;
+  border: 1px solid #333;
+  background: none;
+  color: #888;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+/* Agent detail panel */
+.agent-detail {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  overflow-y: auto;
+}
+
+.agent-detail-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #444;
+  font-size: 0.9rem;
+}
+
+.detail-section {
+  background: #111;
+  border: 1px solid #1a1a1a;
+  border-radius: 12px;
+  padding: 1.25rem;
+}
+
+.detail-section h2 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #ccc;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.detail-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.detail-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.detail-fields label {
+  font-size: 0.75rem;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.prompt-editor {
+  width: 100%;
+  min-height: 300px;
+  padding: 1rem;
+  border: 1px solid #2a2a2a;
+  border-radius: 10px;
+  background: #0a0a0a;
+  color: #e0e0e0;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 0.8rem;
+  line-height: 1.6;
+  resize: vertical;
+  outline: none;
+}
+
+.prompt-editor:focus {
+  border-color: #5b9cf6;
+}
+
+.prompt-meta {
+  font-size: 0.7rem;
+  color: #555;
+  margin-top: 0.5rem;
+  text-align: right;
+}
+
+.resources-hint {
+  font-size: 0.8rem;
+  color: #666;
+  margin-bottom: 0.75rem;
+}
+
+.upload-resource-btn {
+  padding: 0.5rem 1rem;
+  border: 1px dashed #333;
+  border-radius: 8px;
+  background: none;
+  color: #888;
+  font-size: 0.8rem;
+  cursor: pointer;
+  margin-bottom: 0.75rem;
+}
+
+.upload-resource-btn:hover {
+  border-color: #d46ef5;
+  color: #d46ef5;
+}
+
+.resources-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.resource-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  background: #0a0a0a;
+}
+
+.resource-item:hover {
+  background: #151515;
+}
+
+.resource-name {
+  flex: 1;
+  font-size: 0.8rem;
+  color: #ccc;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.resource-size {
+  font-size: 0.7rem;
+  color: #555;
+}
+
+.resource-delete {
+  background: none;
+  border: none;
+  color: #555;
+  cursor: pointer;
+  font-size: 0.75rem;
+}
+
+.resource-delete:hover {
+  color: #f66;
+}
+
+.detail-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.btn-save {
+  padding: 0.6rem 1.5rem;
+  border-radius: 10px;
+  border: none;
+  background: #5b9cf6;
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.btn-save:hover {
+  background: #4a8be5;
+}
+
+.btn-save:disabled {
+  opacity: 0.5;
+}
+
+/* Sidebar agents link */
+.agents-link {
+  display: block;
+  margin: 0.5rem 0.75rem 0;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  background: #1a1a1a;
+  color: #999;
+  text-decoration: none;
+  font-size: 0.8rem;
+  text-align: center;
+  transition: all 0.15s;
+}
+
+.agents-link:hover {
+  background: #222;
+  color: #5b9cf6;
+}
+
 /* === Mobile === */
 @media (max-width: 768px) {
   .sidebar {
