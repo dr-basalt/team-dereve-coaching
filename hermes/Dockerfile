@@ -1,6 +1,6 @@
 FROM python:3.12-slim
 
-RUN pip install --no-cache-dir openai fastapi uvicorn
+RUN pip install --no-cache-dir openai fastapi uvicorn python-multipart
 
 WORKDIR /app
 COPY . /app

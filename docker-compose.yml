@@ -19,6 +19,7 @@ services:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
     volumes:
       - hermes-data:/root/.hermes
+      - user-data:/data
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.hermes.rule=Host(`team-dereve.coachlibre.com`) && PathPrefix(`/hermes`)"
@@ -51,6 +52,7 @@ services:
 
 volumes:
   hermes-data:
+  user-data:
 
 networks:
   web:
