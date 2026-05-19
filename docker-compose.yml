@@ -1,0 +1,55 @@
+services:
+  traefik:
+    image: traefik:v3.4
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - traefik-certs:/letsencrypt
+    environment:
+      - CF_API_EMAIL=${CF_API_EMAIL}
+      - CF_DNS_API_TOKEN=${CF_DNS_API_TOKEN}
+    networks:
+      - web
+
+  hermes:
+    build: ./hermes
+    restart: unless-stopped
+    environment:
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+    volumes:
+      - hermes-data:/root/.hermes
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.hermes.rule=Host(`api.team-dereve.coachlibre.com`)"
+      - "traefik.http.routers.hermes.entrypoints=websecure"
+      - "traefik.http.routers.hermes.tls.certresolver=cloudflare"
+      - "traefik.http.services.hermes.loadbalancer.server.port=8080"
+    networks:
+      - web
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    environment:
+      - HERMES_API_URL=http://hermes:8080
+      - NEXT_PUBLIC_HERMES_API_URL=https://api.team-dereve.coachlibre.com
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend.rule=Host(`team-dereve.coachlibre.com`)"
+      - "traefik.http.routers.frontend.entrypoints=websecure"
+      - "traefik.http.routers.frontend.tls.certresolver=cloudflare"
+      - "traefik.http.services.frontend.loadbalancer.server.port=3000"
+    networks:
+      - web
+
+volumes:
+  traefik-certs:
+  hermes-data:
+
+networks:
+  web:
+    driver: bridge
