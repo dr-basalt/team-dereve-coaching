@@ -21,10 +21,10 @@ services:
       - hermes-data:/root/.hermes
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.hermes.rule=Host(`team-dereve.coachlibre.com`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.hermes.rule=Host(`team-dereve.coachlibre.com`) && PathPrefix(`/hermes`)"
       - "traefik.http.routers.hermes.entrypoints=web"
       - "traefik.http.routers.hermes.priority=100"
-      - "traefik.http.middlewares.hermes-strip.stripprefix.prefixes=/api"
+      - "traefik.http.middlewares.hermes-strip.stripprefix.prefixes=/hermes"
       - "traefik.http.routers.hermes.middlewares=hermes-strip"
       - "traefik.http.services.hermes.loadbalancer.server.port=8080"
     networks:
@@ -35,7 +35,7 @@ services:
     restart: unless-stopped
     environment:
       - HERMES_API_URL=http://hermes:8080
-      - NEXT_PUBLIC_HERMES_API_URL=https://team-dereve.coachlibre.com/api
+      - NEXT_PUBLIC_HERMES_API_URL=https://team-dereve.coachlibre.com/hermes
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.frontend.rule=Host(`team-dereve.coachlibre.com`)"
