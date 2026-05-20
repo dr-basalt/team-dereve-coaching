@@ -579,11 +579,44 @@ async def health():
 
 @app.get("/v1/models")
 async def models():
-    return {
-        "data": [
-            {"id": "hermes-coaching", "object": "model", "owned_by": "team-dereve"},
-        ]
-    }
+    agents = _get_all_agents()
+    model_list = [
+        {"id": "hermes-coaching", "object": "model", "owned_by": "team-dereve",
+         "description": "Routeur intelligent — redirige vers le bon coach"},
+    ]
+    for agent_id, agent in agents.items():
+        model_list.append({
+            "id": f"coach-{agent_id}",
+            "object": "model",
+            "owned_by": "team-dereve",
+            "description": f"{agent.get('name', agent_id)} — {agent.get('description', '')}",
+        })
+    return {"data": model_list}
+
+
+async def direct_coach_respond(coach_name: str, messages: list, user_id: str = "anonymous"):
+    """Call a specific coach directly without the orchestrator."""
+    client = get_client()
+    doc_context = _get_user_documents_context(user_id)
+
+    coach_system = _get_agent_prompt(coach_name)
+    agent_resources = _get_agent_resources_context(coach_name)
+    if agent_resources:
+        coach_system += agent_resources
+    if doc_context:
+        coach_system += doc_context
+
+    coach_messages = [{"role": "system", "content": coach_system}]
+    for m in messages:
+        coach_messages.append({"role": m["role"], "content": m["content"]})
+
+    stream = await client.chat.completions.create(
+        model=MODEL,
+        max_tokens=2048,
+        stream=True,
+        messages=coach_messages,
+    )
+    return stream
 
 
 @app.post("/v1/chat/completions")
@@ -594,6 +627,26 @@ async def chat_completions(request: Request):
     model = body.get("model", "hermes-coaching")
     user_id = request.headers.get("x-user-id", "anonymous")
 
+    # Direct coach mode: model = "coach-max", "coach-forge", "coach-myriam", etc.
+    if model.startswith("coach-"):
+        coach_name = model.replace("coach-", "")
+        agents = _get_all_agents()
+        if coach_name not in agents:
+            return _make_response(f"Coach inconnu: {coach_name}", model)
+        stream = await direct_coach_respond(coach_name, messages, user_id)
+        if stream_requested:
+            return StreamingResponse(
+                stream_openai_response(stream, coach_name, model),
+                media_type="text/event-stream",
+            )
+        full_text = ""
+        async for chunk in stream:
+            delta = chunk.choices[0].delta if chunk.choices else None
+            if delta and delta.content:
+                full_text += delta.content
+        return _make_response(full_text, model)
+
+    # Router mode: model = "hermes-coaching"
     result, coach_name = await route_and_respond(messages, user_id)
 
     if stream_requested and hasattr(result, "__aiter__"):
