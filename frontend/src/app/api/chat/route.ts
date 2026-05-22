@@ -9,7 +9,7 @@ export async function POST(req: Request) {
 
   const hermes = createOpenAI({
     baseURL: (process.env.HERMES_API_URL || 'http://hermes:8080') + '/v1',
-    apiKey: 'unused',
+    apiKey: process.env.HERMES_API_KEY || 'unused',
     headers: { 'x-user-id': userId },
   })
 
