@@ -12,6 +12,8 @@ type Agent = {
   prompt?: string
   prompt_length?: number
   resource_count?: number
+  voice_id?: string
+  voice_name?: string
 }
 
 type Resource = {
@@ -38,7 +40,9 @@ export default function AgentsPage() {
   const [newAgentDesc, setNewAgentDesc] = useState('')
   const [newAgentColor, setNewAgentColor] = useState('#888888')
   const [listOpen, setListOpen] = useState(true)
+  const [voiceUploading, setVoiceUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const voiceInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (session?.user) loadAgents()
@@ -130,6 +134,34 @@ export default function AgentsPage() {
     await fetch(`/api/agents/${selectedAgent}/resources/${resId}`, { method: 'DELETE' })
     const res = await fetch(`/api/agents/${selectedAgent}/resources`)
     if (res.ok) setResources(await res.json())
+  }
+
+  const uploadVoice = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !selectedAgent) return
+    setVoiceUploading(true)
+    const formData = new FormData()
+    formData.append('file', file)
+    const res = await fetch(`/api/agents/${selectedAgent}/voice`, {
+      method: 'POST',
+      body: formData,
+    })
+    if (res.ok) {
+      const data = await res.json()
+      if (data.error) {
+        alert(data.error)
+      } else {
+        setAgentDetail(prev => prev ? { ...prev, voice_id: data.voice_id, voice_name: data.voice_name } : prev)
+      }
+    }
+    setVoiceUploading(false)
+    if (voiceInputRef.current) voiceInputRef.current.value = ''
+  }
+
+  const removeVoice = async () => {
+    if (!selectedAgent) return
+    await fetch(`/api/agents/${selectedAgent}/voice`, { method: 'DELETE' })
+    setAgentDetail(prev => prev ? { ...prev, voice_id: undefined, voice_name: undefined } : prev)
   }
 
   return (
@@ -272,6 +304,42 @@ export default function AgentsPage() {
                   </div>
                 ))}
               </div>
+            </div>
+
+            <div className="detail-section">
+              <h2>Voix (ElevenLabs)</h2>
+              <p className="resources-hint">
+                Clone la voix d&apos;un infopreneur a partir d&apos;un extrait audio (30s-3min, .mp3/.wav/.m4a)
+              </p>
+              {agentDetail.voice_id ? (
+                <div className="voice-active">
+                  <div className="voice-info">
+                    <span className="voice-icon">&#9835;</span>
+                    <div>
+                      <span className="voice-name">{agentDetail.voice_name}</span>
+                      <span className="voice-id">ID: {agentDetail.voice_id}</span>
+                    </div>
+                  </div>
+                  <button className="voice-remove" onClick={removeVoice}>Supprimer</button>
+                </div>
+              ) : (
+                <>
+                  <button
+                    className="upload-resource-btn"
+                    onClick={() => voiceInputRef.current?.click()}
+                    disabled={voiceUploading}
+                  >
+                    {voiceUploading ? 'Clonage en cours...' : '+ Cloner une voix'}
+                  </button>
+                  <input
+                    ref={voiceInputRef}
+                    type="file"
+                    accept=".mp3,.wav,.m4a,.ogg,.webm"
+                    onChange={uploadVoice}
+                    style={{ display: 'none' }}
+                  />
+                </>
+              )}
             </div>
 
             <div className="detail-actions">

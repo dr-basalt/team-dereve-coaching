@@ -339,6 +339,92 @@ async def delete_agent_resource(agent_id: str, res_id: str):
     return {"ok": True}
 
 
+# --- Voice cloning API (ElevenLabs) ---
+
+@app.post("/agents/{agent_id}/voice/clone")
+async def clone_voice_for_agent(agent_id: str, file: UploadFile = File(...)):
+    """Upload an audio sample and clone the voice via ElevenLabs for this agent."""
+    import httpx
+
+    elevenlabs_key = os.environ.get("ELEVENLABS_API_KEY", "")
+    if not elevenlabs_key:
+        return {"error": "ELEVENLABS_API_KEY not configured"}
+
+    config = _get_agent_config(agent_id)
+    agent_name = config.get("name", agent_id.capitalize())
+    voice_name = f"Coach {agent_name}"
+
+    audio_content = await file.read()
+
+    async with httpx.AsyncClient(timeout=60) as client:
+        resp = await client.post(
+            "https://api.elevenlabs.io/v1/voices/add",
+            headers={"xi-api-key": elevenlabs_key},
+            data={"name": voice_name, "description": f"Voix clonée pour {agent_name}"},
+            files={"files": (file.filename or "sample.mp3", audio_content, file.content_type or "audio/mpeg")},
+        )
+
+    if resp.status_code != 200:
+        return {"error": f"ElevenLabs error: {resp.text}"}
+
+    result = resp.json()
+    voice_id = result.get("voice_id", "")
+
+    # Save voice_id in agent config
+    config["voice_id"] = voice_id
+    config["voice_name"] = voice_name
+    config_file = _agent_dir(agent_id) / "config.json"
+    config_file.write_text(json.dumps(config, ensure_ascii=False, indent=2))
+
+    return {"voice_id": voice_id, "voice_name": voice_name}
+
+
+@app.delete("/agents/{agent_id}/voice")
+async def remove_voice_for_agent(agent_id: str):
+    """Remove the cloned voice from agent config and optionally from ElevenLabs."""
+    import httpx
+
+    config = _get_agent_config(agent_id)
+    voice_id = config.pop("voice_id", None)
+    config.pop("voice_name", None)
+    config_file = _agent_dir(agent_id) / "config.json"
+    config_file.write_text(json.dumps(config, ensure_ascii=False, indent=2))
+
+    # Delete from ElevenLabs too
+    if voice_id:
+        elevenlabs_key = os.environ.get("ELEVENLABS_API_KEY", "")
+        if elevenlabs_key:
+            async with httpx.AsyncClient(timeout=30) as client:
+                await client.delete(
+                    f"https://api.elevenlabs.io/v1/voices/{voice_id}",
+                    headers={"xi-api-key": elevenlabs_key},
+                )
+
+    return {"ok": True}
+
+
+@app.get("/voices")
+async def list_voices():
+    """List available ElevenLabs voices."""
+    import httpx
+
+    elevenlabs_key = os.environ.get("ELEVENLABS_API_KEY", "")
+    if not elevenlabs_key:
+        return []
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(
+            "https://api.elevenlabs.io/v1/voices",
+            headers={"xi-api-key": elevenlabs_key},
+        )
+
+    if resp.status_code != 200:
+        return []
+
+    voices = resp.json().get("voices", [])
+    return [{"id": v["voice_id"], "name": v["name"], "category": v.get("category", "")} for v in voices]
+
+
 # --- User data helpers ---
 
 def _user_dir(user_id: str) -> Path:
