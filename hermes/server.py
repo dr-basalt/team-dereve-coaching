@@ -586,175 +586,66 @@ async def delete_document(doc_id: str, request: Request):
     return {"ok": True}
 
 
-# --- Coaching routing ---
+# --- Proxy to real Hermes Agent ---
 
-async def route_and_respond(messages: list, user_id: str = "anonymous"):
-    """Use the orchestrator to pick a coach, then stream the coach's response."""
-    client = get_client()
-    agents = _get_all_agents()
-    tools = _build_tools(agents)
-    soul = _get_soul()
-    doc_context = _get_user_documents_context(user_id)
-
-    router_response = await client.chat.completions.create(
-        model=MODEL,
-        max_tokens=256,
-        messages=[{"role": "system", "content": soul}] + messages,
-        tools=tools,
-        tool_choice="auto",
-    )
-
-    choice = router_response.choices[0]
-
-    if choice.message.tool_calls:
-        tool_call = choice.message.tool_calls[0]
-        coach_name = tool_call.function.name.replace("consult_", "")
-        args = json.loads(tool_call.function.arguments)
-
-        # Build coach system prompt with agent resources + user documents
-        coach_system = _get_agent_prompt(coach_name)
-        agent_resources = _get_agent_resources_context(coach_name)
-        if agent_resources:
-            coach_system += agent_resources
-        if doc_context:
-            coach_system += doc_context
-
-        coach_messages = [{"role": "system", "content": coach_system}]
-        for m in messages:
-            coach_messages.append({"role": m["role"], "content": m["content"]})
-
-        stream = await client.chat.completions.create(
-            model=MODEL,
-            max_tokens=2048,
-            stream=True,
-            messages=coach_messages,
-        )
-        return stream, coach_name
-    else:
-        return choice.message.content, None
-
-
-async def stream_openai_response(stream, coach_name: str, request_model: str):
-    resp_id = f"chatcmpl-{int(time.time())}"
-
-    async for chunk in stream:
-        delta = chunk.choices[0].delta if chunk.choices else None
-        if delta and delta.content:
-            data = {
-                "id": resp_id,
-                "object": "chat.completion.chunk",
-                "model": request_model,
-                "choices": [{"index": 0, "delta": {"content": delta.content}, "finish_reason": None}],
-            }
-            yield f"data: {json.dumps(data)}\n\n"
-
-    data = {
-        "id": resp_id,
-        "object": "chat.completion.chunk",
-        "model": request_model,
-        "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
-    }
-    yield f"data: {json.dumps(data)}\n\n"
-    yield "data: [DONE]\n\n"
+HERMES_AGENT_URL = os.environ.get("HERMES_AGENT_URL", "http://host.docker.internal:8080")
+HERMES_AGENT_KEY = os.environ.get("HERMES_AGENT_KEY", "hermes-coaching-2026")
 
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    return {"status": "ok", "mode": "management-api + hermes-agent-proxy"}
 
 
 @app.get("/v1/models")
 async def models():
-    agents = _get_all_agents()
-    model_list = [
-        {"id": "hermes-coaching", "object": "model", "owned_by": "team-dereve",
-         "description": "Routeur intelligent — redirige vers le bon coach"},
-    ]
-    for agent_id, agent in agents.items():
-        model_list.append({
-            "id": f"coach-{agent_id}",
-            "object": "model",
-            "owned_by": "team-dereve",
-            "description": f"{agent.get('name', agent_id)} — {agent.get('description', '')}",
-        })
-    return {"data": model_list}
+    import httpx
+    # Proxy to real Hermes Agent and merge with agent list
+    async with httpx.AsyncClient(timeout=10) as client:
+        try:
+            resp = await client.get(
+                f"{HERMES_AGENT_URL}/v1/models",
+                headers={"Authorization": f"Bearer {HERMES_AGENT_KEY}"},
+            )
+            hermes_models = resp.json().get("data", [])
+        except Exception:
+            hermes_models = [{"id": "hermes-coaching", "object": "model", "owned_by": "hermes"}]
 
-
-async def direct_coach_respond(coach_name: str, messages: list, user_id: str = "anonymous"):
-    """Call a specific coach directly without the orchestrator."""
-    client = get_client()
-    doc_context = _get_user_documents_context(user_id)
-
-    coach_system = _get_agent_prompt(coach_name)
-    agent_resources = _get_agent_resources_context(coach_name)
-    if agent_resources:
-        coach_system += agent_resources
-    if doc_context:
-        coach_system += doc_context
-
-    coach_messages = [{"role": "system", "content": coach_system}]
-    for m in messages:
-        coach_messages.append({"role": m["role"], "content": m["content"]})
-
-    stream = await client.chat.completions.create(
-        model=MODEL,
-        max_tokens=2048,
-        stream=True,
-        messages=coach_messages,
-    )
-    return stream
+    return {"data": hermes_models}
 
 
 @app.post("/v1/chat/completions")
 async def chat_completions(request: Request):
+    """Proxy chat to real Hermes Agent runtime."""
+    import httpx
     body = await request.json()
-    messages = body.get("messages", [])
     stream_requested = body.get("stream", False)
-    model = body.get("model", "hermes-coaching")
-    user_id = request.headers.get("x-user-id", "anonymous")
 
-    # Direct coach mode: model = "coach-max", "coach-forge", "coach-myriam", etc.
-    if model.startswith("coach-"):
-        coach_name = model.replace("coach-", "")
-        agents = _get_all_agents()
-        if coach_name not in agents:
-            return _make_response(f"Coach inconnu: {coach_name}", model)
-        stream = await direct_coach_respond(coach_name, messages, user_id)
-        if stream_requested:
-            return StreamingResponse(
-                stream_openai_response(stream, coach_name, model),
-                media_type="text/event-stream",
-            )
-        full_text = ""
-        async for chunk in stream:
-            delta = chunk.choices[0].delta if chunk.choices else None
-            if delta and delta.content:
-                full_text += delta.content
-        return _make_response(full_text, model)
+    if stream_requested:
+        async def proxy_stream():
+            async with httpx.AsyncClient(timeout=120) as client:
+                async with client.stream(
+                    "POST",
+                    f"{HERMES_AGENT_URL}/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {HERMES_AGENT_KEY}",
+                        "Content-Type": "application/json",
+                    },
+                    content=json.dumps(body),
+                ) as resp:
+                    async for chunk in resp.aiter_bytes():
+                        yield chunk
 
-    # Router mode: model = "hermes-coaching"
-    result, coach_name = await route_and_respond(messages, user_id)
-
-    if stream_requested and hasattr(result, "__aiter__"):
-        return StreamingResponse(
-            stream_openai_response(result, coach_name or "myriam", model),
-            media_type="text/event-stream",
-        )
-    elif hasattr(result, "__aiter__"):
-        full_text = ""
-        async for chunk in result:
-            delta = chunk.choices[0].delta if chunk.choices else None
-            if delta and delta.content:
-                full_text += delta.content
-        return _make_response(full_text, model)
+        return StreamingResponse(proxy_stream(), media_type="text/event-stream")
     else:
-        return _make_response(result, model)
-
-
-def _make_response(text: str, model: str):
-    return {
-        "id": f"chatcmpl-{int(time.time())}",
-        "object": "chat.completion",
-        "model": model,
-        "choices": [{"index": 0, "message": {"role": "assistant", "content": text}, "finish_reason": "stop"}],
-    }
+        import httpx
+        async with httpx.AsyncClient(timeout=120) as client:
+            resp = await client.post(
+                f"{HERMES_AGENT_URL}/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {HERMES_AGENT_KEY}",
+                    "Content-Type": "application/json",
+                },
+                content=json.dumps(body),
+            )
+            return resp.json()
