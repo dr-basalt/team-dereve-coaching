@@ -1,0 +1,22 @@
+http:
+  routers:
+    hermes:
+      rule: "Host(`team-dereve.coachlibre.com`) && PathPrefix(`/hermes`)"
+      entryPoints:
+        - web
+      service: hermes
+      priority: 100
+      middlewares:
+        - hermes-strip
+
+  middlewares:
+    hermes-strip:
+      stripPrefix:
+        prefixes:
+          - /hermes
+
+  services:
+    hermes:
+      loadBalancer:
+        servers:
+          - url: "http://172.17.0.1:8080"
