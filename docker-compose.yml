@@ -65,8 +65,8 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
-      - OPENAI_API_BASE_URLS=http://host.docker.internal:8080/v1;https://openrouter.ai/api/v1
-      - OPENAI_API_KEYS=hermes-coaching-2026;${OPENROUTER_API_KEY}
+      - OPENAI_API_BASE_URLS=http://host.docker.internal:8080/v1;http://host.docker.internal:8181/v1;http://host.docker.internal:8182/v1;http://host.docker.internal:8183/v1;https://openrouter.ai/api/v1
+      - OPENAI_API_KEYS=hermes-coaching-2026;hermes-coaching-2026;hermes-coaching-2026;hermes-coaching-2026;${OPENROUTER_API_KEY}
       - WEBUI_AUTH=true
       - ENABLE_OPENAI_API=true
       - AUDIO_STT_ENGINE=openai
