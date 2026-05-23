@@ -31,6 +31,7 @@ export default function Home() {
 
   const { messages, input, handleInputChange, handleSubmit, isLoading, setMessages } = useChat({
     api: '/api/chat',
+    streamProtocol: 'text',
     onFinish: () => {
       if (currentConvoId) saveConversation(currentConvoId)
     },
