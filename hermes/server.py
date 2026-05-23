@@ -616,10 +616,20 @@ async def models():
 
 @app.post("/v1/chat/completions")
 async def chat_completions(request: Request):
-    """Proxy chat to real Hermes Agent runtime."""
+    """Proxy chat to real Hermes Agent runtime with session persistence."""
     import httpx
     body = await request.json()
     stream_requested = body.get("stream", False)
+    user_id = request.headers.get("x-user-id", "anonymous")
+
+    # Build a stable session ID so Hermes Agent maintains memory across conversations
+    session_id = f"user-{user_id.replace('@', '_').replace('.', '_')}"
+
+    proxy_headers = {
+        "Authorization": f"Bearer {HERMES_AGENT_KEY}",
+        "Content-Type": "application/json",
+        "X-Hermes-Session-Id": session_id,
+    }
 
     if stream_requested:
         async def proxy_stream():
@@ -627,10 +637,7 @@ async def chat_completions(request: Request):
                 async with client.stream(
                     "POST",
                     f"{HERMES_AGENT_URL}/v1/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {HERMES_AGENT_KEY}",
-                        "Content-Type": "application/json",
-                    },
+                    headers=proxy_headers,
                     content=json.dumps(body),
                 ) as resp:
                     async for chunk in resp.aiter_bytes():
@@ -638,14 +645,10 @@ async def chat_completions(request: Request):
 
         return StreamingResponse(proxy_stream(), media_type="text/event-stream")
     else:
-        import httpx
         async with httpx.AsyncClient(timeout=120) as client:
             resp = await client.post(
                 f"{HERMES_AGENT_URL}/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {HERMES_AGENT_KEY}",
-                    "Content-Type": "application/json",
-                },
+                headers=proxy_headers,
                 content=json.dumps(body),
             )
             return resp.json()
